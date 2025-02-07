@@ -9,27 +9,33 @@ class Stepper {
     int32_t getPosition(void);
     bool requestPositionDelta(int32_t);
 
-    void setMaxSpeed(uint32_t max);
+    bool isValidCruiseSpeed(float speed);
+    bool isValidSpeed(float speed);
+
+    bool setMaxSpeed(float speed);
     uint32_t getMaxSpeed(void);
 
-    void setMinSpeed(uint32_t min);
+    bool setMinSpeed(float speed);
     uint32_t getMinSpeed(void);
 
-    void setCruiseSpeed(uint32_t speed);
+    bool setCruiseSpeed(float speed);
     uint32_t getCruiseSpeed(void);
 
-    void setAcceleration(uint32_t acc);
+    bool setAcceleration(float acc);
     uint32_t getAcceleration(void);
+
+    uint32_t getRampSteps(void);
+    bool resetPosition(void);
 
     bool run(void);
     bool update(void);
     void setEnable(bool);
 
-    static const int MOVEMENT_IDLE = 0;           // not energized
-    static const int MOVEMENT_HOLDING = 1;        // not moving, but energized
-    static const int MOVEMENT_ACCELERATING = 2;   // increasing speed movement
-    static const int MOVEMENT_CONSTANT_SPEED = 3; // constant speed movement
-    static const int MOVEMENT_BRAKING = 4;        // decreasing speed movement
+    static const int MOVEMENT_STATE_IDLE = 0;         // not energized
+    static const int MOVEMENT_STATE_HOLDING = 1;      // not moving, but energized
+    static const int MOVEMENT_STATE_ACCELERATING = 2; // increasing speed movement
+    static const int MOVEMENT_STATE_CRUISING = 3;     // constant speed movement
+    static const int MOVEMENT_STATE_BRAKING = 4;      // decreasing speed movement
 
     static const int DIRECTION_STOPPED = 0;
     static const int DIRECTION_FORWARD = 1;
@@ -52,11 +58,12 @@ float acceleration_times_two;
     int32_t currentPosition;          // updated in update()
     uint32_t ticksToNextStep;         // 
     int32_t  direction;               // -1 backward, 1 forward, 0 stopped
-    bool     enable;                  // drive motor
+    bool setDirection(int newDir);
+    bool enable;                  // drive motor
     int pioStep;
     int pioDir;
     int pioEnable;
-    int mouvementState;
+    int movementState;
     int nextPioStep; // value to push to pioStep at next call to run()
     int travelSteps;
     int halfTravelSteps;

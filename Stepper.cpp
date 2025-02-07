@@ -17,15 +17,6 @@ Stepper *getStepper(int c){
   return(NULL);
 }
 
-bool Stepper::updateCurrentSpeed(float newSpeed){
-  if((startSpeed <= newSpeed) && (newSpeed <= maxSpeed)){
-    currentSpeed = newSpeed;
-    currentTicks = (int)((float)frequency / currentSpeed);
-    return(true);
-  }
-  return(false);
-}
-
 Stepper::Stepper(const char *szName, uint32_t runFrequency, int stepPin, int dirPin, int enablePin){
   name = szName;
   frequency = runFrequency;
@@ -33,6 +24,7 @@ Stepper::Stepper(const char *szName, uint32_t runFrequency, int stepPin, int dir
   enable = false;
   nextPioStep = LOW;
   pioStep   = stepPin;   pinMode(pioStep, OUTPUT);   digitalWrite(pioStep, nextPioStep); // prepare for rising front
+  direction = DIRECTION_STOPPED;
   pioDir    = dirPin;    pinMode(pioDir, OUTPUT);    digitalWrite(pioDir, LOW);          // irrelevant yet
   pioEnable = enablePin; pinMode(pioEnable, OUTPUT); digitalWrite(pioEnable, HIGH);      // disable
 
@@ -40,47 +32,69 @@ Stepper::Stepper(const char *szName, uint32_t runFrequency, int stepPin, int dir
   requestedDelta = 0;
   targetPosition = 0;
   currentPosition = 0;
-  direction = DIRECTION_STOPPED;
   startSpeed = 20.0f;
   maxSpeed = 1020.0f;
-  acceleration = 1000.0f;
+  acceleration = 2000.0f;
 
   currentSpeed = (float)startSpeed;
   currentTicks = (int)((float)frequency / currentSpeed);
   totalSteps = 0;
   totalTicks = 0;
-  mouvementState = MOVEMENT_IDLE;
+  movementState = MOVEMENT_STATE_IDLE;
   ticksToNextStep = currentTicks;
   remainingSteps = 0;
 }
 
-void Stepper::setMaxSpeed(uint32_t max){
-  maxSpeed = (float)max;
+bool Stepper::setMaxSpeed(float speed){
+  if(remainingSteps){
+    return(true);
+  }else{
+    maxSpeed = speed;
+  }
+  return(false);
 }
 
 uint32_t Stepper::getMaxSpeed(void){
   return((uint32_t)maxSpeed);
 }
 
-void Stepper::setMinSpeed(uint32_t min){
-  startSpeed = (float)min;
+bool Stepper::setMinSpeed(float speed){
+  if(remainingSteps){
+    return(true);
+  }else{
+    startSpeed = speed;
+  }
+  return(false);
 }
 
 uint32_t Stepper::getMinSpeed(void){
   return((uint32_t)startSpeed);
 }
 
-void Stepper::setCruiseSpeed(uint32_t speed){
-  cruiseSpeed = (float)speed;
+bool Stepper::setCruiseSpeed(float speed){
+  bool raiseError = true;
+  if(0 == remainingSteps){
+    if(isValidCruiseSpeed(speed)){
+      cruiseSpeed = speed;
+      raiseError = false;
+    }
+  }
+  return(raiseError);
 }
 
 uint32_t Stepper::getCruiseSpeed(void){
   return((uint32_t)cruiseSpeed);
 }
 
-void Stepper::setAcceleration(uint32_t acc){
-  acceleration = (float)acc;
+bool Stepper::setAcceleration(float acc){
+  if(remainingSteps){
+    return(true);
+  }else{
+    acceleration = acc;
+  }
+  return(false);
 }
+
 uint32_t Stepper::getAcceleration(void){
   return((uint32_t)acceleration);
 }
@@ -91,6 +105,15 @@ const char *Stepper::getName(void){
 
 int32_t Stepper::getPosition(void){
   return(currentPosition);
+}
+
+bool Stepper::resetPosition(void){
+  if(remainingSteps){
+    return(true);
+  }else{
+    currentPosition = 0;
+  }
+  return(false);
 }
 
 bool Stepper::requestPosition(int32_t position){
@@ -133,6 +156,27 @@ static void printfFloat(float f){
 }
 #endif
 
+bool Stepper::isValidCruiseSpeed(float newSpeed){
+  return((0.0f == newSpeed) || ((startSpeed <= newSpeed) && (newSpeed <= maxSpeed)));
+}
+
+bool Stepper::isValidSpeed(float newSpeed){
+  if(0.0f == cruiseSpeed){
+    return((startSpeed <= newSpeed) && (newSpeed <= maxSpeed));
+  }else{
+    return((startSpeed <= newSpeed) && (newSpeed <= cruiseSpeed));
+  }
+}
+
+bool Stepper::updateCurrentSpeed(float newSpeed){
+  if(isValidSpeed(newSpeed)){
+    currentSpeed = newSpeed;
+    currentTicks = (int)((float)frequency / currentSpeed);
+    return(true);
+  }
+  return(false);
+}
+
 float Stepper::nextSpeed(void) {
     float square = currentSpeed * currentSpeed + acceleration_times_two;
     float returnValue = 0.0;
@@ -142,11 +186,24 @@ float Stepper::nextSpeed(void) {
     return(returnValue);
 }
 
-
 bool Stepper::run(void){
   digitalWrite(pioStep, nextPioStep);
   nextPioStep = LOW;
   return(true);
+}
+
+bool Stepper::setDirection(int newDir){
+  if(direction == newDir){
+    return(false);
+  }else{
+    direction = newDir;
+    if(DIRECTION_FORWARD == direction){
+      digitalWrite(pioDir, LOW);
+    }else if(DIRECTION_BACKWARD == direction){
+      digitalWrite(pioDir, HIGH);
+    }
+    return(true);
+  }
 }
 
 bool Stepper::update(void){
@@ -156,37 +213,57 @@ bool Stepper::update(void){
       if(0 == ticksToNextStep){
         remainingSteps--;
         currentPosition += direction;
-        updateCurrentSpeed(nextSpeed());
+        // what to do next ?
+        // If we are still accelerating and have reached half the travel distance, we need to start breaking
+        // If we are cruising and we have just rampSteps of travel distance left, we need to start breaking
+        if((MOVEMENT_STATE_ACCELERATING == movementState) && (remainingSteps <= halfTravelSteps)){
+          movementState = MOVEMENT_STATE_BRAKING;
+          acceleration_times_two = -acceleration_times_two;
+        }
+        if((MOVEMENT_STATE_CRUISING == movementState)){
+          if((remainingSteps <= rampSteps)){
+            movementState = MOVEMENT_STATE_BRAKING;
+            acceleration_times_two = -acceleration_times_two;
+          }
+        }else{
+          bool speedUpdated = updateCurrentSpeed(nextSpeed());
+          if(!speedUpdated && (MOVEMENT_STATE_ACCELERATING == movementState)){
+            // Cruising speed reached
+            movementState = MOVEMENT_STATE_CRUISING;
+            rampSteps = totalSteps;
+          }
+        }
         ticksToNextStep = currentTicks;
         totalTicks += ticksToNextStep;
         totalSteps++;
-        nextPioStep = HIGH;
+        nextPioStep = HIGH; // rising edge at next call to run()
       }
     }
     return(true);
   }else{
+    int remaining = 0;
     // check for pending move request
     if(requestedDelta){
       requestedPositionPending = false;
       if(requestedDelta < 0){
-        remainingSteps = -requestedDelta;
-        direction = DIRECTION_BACKWARD;
+        remaining = -requestedDelta;
+        setDirection(DIRECTION_BACKWARD);
       }else{
-        remainingSteps = requestedDelta;
-        direction = DIRECTION_FORWARD;
+        remaining = requestedDelta;
+        setDirection(DIRECTION_FORWARD);
       }
       requestedDelta = 0;
     }else if(requestedPositionPending){
       requestedPositionPending = false;
       if(requestedPosition < currentPosition){
-        remainingSteps = (currentPosition - requestedPosition);
-        direction = DIRECTION_BACKWARD;
+        remaining = (currentPosition - requestedPosition);
+        setDirection(DIRECTION_BACKWARD);
       }else{
-        remainingSteps = (requestedPosition - currentPosition);
-        direction = DIRECTION_FORWARD;
+        remaining = (requestedPosition - currentPosition);
+        setDirection(DIRECTION_FORWARD);
       }
     }
-    if(remainingSteps > 0){
+    if(remaining > 0){
       // configure the first step
       currentSpeed = (float)startSpeed;
       currentTicks = (int)((float)frequency / currentSpeed);
@@ -194,7 +271,16 @@ bool Stepper::update(void){
       acceleration_times_two = 2.0f * acceleration;
       totalSteps = 0;
       totalTicks = 0;
+      rampSteps = 0;
+      travelSteps = remaining;
+      halfTravelSteps = (remaining >> 1); // 1 => 0, 2 => 1, 3 => 1, 4 => 2, ...
+      movementState = MOVEMENT_STATE_ACCELERATING;
+      remainingSteps = remaining;
     }
   }
   return(false);
+}
+
+uint32_t Stepper::getRampSteps(void){
+  return(rampSteps);
 }

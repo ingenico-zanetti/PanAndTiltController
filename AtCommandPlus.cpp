@@ -32,7 +32,7 @@ static bool plusRead(Stream *s, Stepper *stepper, const char c, const char *szSt
   (void)c;
   (void)szString;
   (void)comas;
-  s->printf("%s: position = %d, speed [ %d %d %d ], acceleration = %d" "\n", stepper->getName(), stepper->getPosition(), stepper->getMinSpeed(), stepper->getCruiseSpeed(), stepper->getMaxSpeed(), stepper->getAcceleration());
+  s->printf("%s: position = %d, speed [ %d %d %d ], acceleration = %d (rampSteps=%u)" "\n", stepper->getName(), stepper->getPosition(), stepper->getMinSpeed(), stepper->getCruiseSpeed(), stepper->getMaxSpeed(), stepper->getAcceleration(), stepper->getRampSteps());
   return(false);
 }
 
@@ -57,8 +57,6 @@ static bool plusWrite(Stream *s, Stepper *stepper, const char c, const char *szS
   (void)s;
   (void)stepper;
   (void)c;
-  (void)szString;
-  (void)comas;
   char *end = NULL;
   const char *numberPtr = szString + 3;
   float firstValue = strtof(numberPtr, &end);
@@ -79,15 +77,36 @@ static bool plusWrite(Stream *s, Stepper *stepper, const char c, const char *szS
     break;
     case 'S':
       // set cruise speed in step per second
+      if(hasSecondValue){
+        raiseError = stepper->setCruiseSpeed(secondValue);
+      }else{
+        raiseError = true;
+      }
     break;
     case 'A':
       // set acceleration in step per second squared
+      // set cruise speed in step per second
+      if(hasSecondValue){
+        raiseError = stepper->setAcceleration(secondValue);
+      }else{
+        raiseError = true;
+      }
     break;
     case 'I':
       // set min / start speed in step per second
+      if(hasSecondValue){
+        raiseError = stepper->setMinSpeed(secondValue);
+      }else{
+        raiseError = true;
+      }
     break;
     case 'X':
       // set max speed in step per second
+      if(hasSecondValue){
+        raiseError = stepper->setMaxSpeed(secondValue);
+      }else{
+        raiseError = true;
+      }
     break;
     case '-':
     case '+':
@@ -97,6 +116,9 @@ static bool plusWrite(Stream *s, Stepper *stepper, const char c, const char *szS
       }else{
         raiseError = true;
       }
+    break;
+    case 'R':
+      raiseError = stepper->resetPosition();
     break;
     default:
       // absolute move
