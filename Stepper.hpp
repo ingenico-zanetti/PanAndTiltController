@@ -9,6 +9,9 @@ class Stepper {
     int32_t getPosition(void);
     bool requestPositionDelta(int32_t);
 
+    bool requestTimedPosition(int32_t, float);
+    bool requestTimedPositionDelta(int32_t, float);
+
     bool isValidCruiseSpeed(float speed);
     bool isValidSpeed(float speed);
 
@@ -65,13 +68,11 @@ float acceleration_times_two;
     int pioEnable;
     int movementState;
     int nextPioStep; // value to push to pioStep at next call to run()
+    // speed-controlled move
+    int remainingSteps;
     int travelSteps;
     int halfTravelSteps;
-    int travelTicks;
-    int halfTravelTicks;
     int rampSteps;
-    int rampTicks;
-    int remainingSteps;
 
     float startSpeed;
     uint32_t startSpeedTicks;
@@ -82,6 +83,12 @@ float acceleration_times_two;
     float currentSpeed;
     uint32_t currentSpeedTicks;
     float acceleration;
+
+    // time-controlled move
+    int travelTicks;
+    int halfTravelTicks;
+    int rampTicks;
+
 };
 
 extern Stepper panStepper;

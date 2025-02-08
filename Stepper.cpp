@@ -137,6 +137,22 @@ bool Stepper::requestPositionDelta(int32_t delta){
   return(raiseError);
 }
 
+bool Stepper::requestTimedPosition(int32_t position, float duration){
+  if(0.0f == travelTicks){
+    travelTicks = duration * frequency;
+    return(requestPosition(position));
+  }
+  return(true);
+}
+
+bool Stepper::requestTimedPositionDelta(int32_t delta, float duration){
+  if(0.0f == travelTicks){
+    travelTicks = duration * frequency;
+    return(requestPositionDelta(delta));
+  }
+  return(true);
+}
+
 void Stepper::setEnable(bool e){
   enable = e;
   // Active low pin

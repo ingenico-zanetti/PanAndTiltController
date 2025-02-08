@@ -112,7 +112,11 @@ static bool plusWrite(Stream *s, Stepper *stepper, const char c, const char *szS
     case '+':
       // delta move
       if(hasFirstValue){
-        raiseError = stepper->requestPositionDelta((int32_t)firstValue);
+        if(hasSecondValue){
+          raiseError = stepper->requestTimedPositionDelta((int32_t)firstValue, secondValue);
+        }else{
+          raiseError = stepper->requestPositionDelta((int32_t)firstValue);
+        }
       }else{
         raiseError = true;
       }
@@ -123,7 +127,11 @@ static bool plusWrite(Stream *s, Stepper *stepper, const char c, const char *szS
     default:
       // absolute move
       if(hasFirstValue){
-        raiseError = stepper->requestPosition((int32_t)firstValue);
+        if(hasSecondValue){
+          raiseError = stepper->requestTimedPosition((int32_t)firstValue, secondValue);
+        }else{
+          raiseError = stepper->requestPosition((int32_t)firstValue);
+        }
       }else{
         raiseError = true;
       }
