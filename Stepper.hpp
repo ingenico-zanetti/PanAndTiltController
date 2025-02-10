@@ -1,6 +1,8 @@
 #ifndef __STEPPER_HPP_INCLUDED__
 #define __STEPPER_HPP_INCLUDED__
 
+#define LOG_SIZE (1023)
+
 class Stepper {
 	public:
     Stepper(const char *szName, uint32_t runFrequency, int stepPin, int dirPin, int enablePin);
@@ -51,7 +53,11 @@ bool updateCurrentSpeed(float newSpeed);
 float nextSpeed(void);
 float acceleration_times_two;
 
+  void log(const char *sz);
+  const char *getLogString(void){return(logString);}
+
 	private:
+    char logString[LOG_SIZE + 1];
     const char *name;
     int frequency;
     int32_t requestedPosition;        // requested absolute position, read by run()

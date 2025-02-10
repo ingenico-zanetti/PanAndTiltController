@@ -43,6 +43,9 @@ Stepper::Stepper(const char *szName, uint32_t runFrequency, int stepPin, int dir
   movementState = MOVEMENT_STATE_IDLE;
   ticksToNextStep = currentTicks;
   remainingSteps = 0;
+
+  logString[0] = '\0';
+
 }
 
 bool Stepper::setMaxSpeed(float speed){
@@ -163,12 +166,11 @@ void Stepper::setEnable(bool e){
   }
 }
 
-
-#if 0
-static void printfFloat(float f){
+#ifdef __LOG__
+static void sprintfFloat(char *szString, float f){
   int entier = (int)floor(f);
   int virgule = (int)((f - floor(f)) * 1000000.0);
-  Serial.printf("%d.%06d", entier, virgule);
+  sprintf(szString, "%d.%06d", entier, virgule);
 }
 #endif
 
@@ -178,7 +180,12 @@ bool Stepper::isValidCruiseSpeed(float newSpeed){
 
 bool Stepper::isValidSpeed(float newSpeed){
   if(0.0f == cruiseSpeed){
-    return((startSpeed <= newSpeed) && (newSpeed <= maxSpeed));
+#ifdef __LOG__
+    char newSpeedString[32];
+    sprintfFloat(newSpeedString, newSpeed);
+    log("isValidSpeed("); log(newSpeedString); log(");");
+#endif
+    return((startSpeed <= floor(newSpeed + 0.5)) && (newSpeed <= maxSpeed));
   }else{
     return((startSpeed <= newSpeed) && (newSpeed <= cruiseSpeed));
   }
@@ -191,6 +198,16 @@ bool Stepper::updateCurrentSpeed(float newSpeed){
     return(true);
   }
   return(false);
+}
+
+void Stepper::log(const char *sz){
+  unsigned int offset = strlen(logString);
+  unsigned int length = strlen(sz);
+  if((offset + length) >= (sizeof(logString) - 1)){
+    memmove(logString, logString + length, (offset - length));
+    offset -= length;
+  }
+  strcpy(logString + offset, sz);
 }
 
 float Stepper::nextSpeed(void) {
@@ -227,17 +244,25 @@ bool Stepper::update(void){
     if(ticksToNextStep > 0){
       ticksToNextStep--;
       if(0 == ticksToNextStep){
+        bool fakeCruise = false;
         remainingSteps--;
+        totalSteps++;
         currentPosition += direction;
         // what to do next ?
         // If we are still accelerating and have reached half the travel distance, we need to start breaking
         // If we are cruising and we have just rampSteps of travel distance left, we need to start breaking
         if((MOVEMENT_STATE_ACCELERATING == movementState) && (remainingSteps <= halfTravelSteps)){
-          movementState = MOVEMENT_STATE_BRAKING;
-          acceleration_times_two = -acceleration_times_two;
+          if(travelSteps & 1){
+            movementState = MOVEMENT_STATE_BRAKING;
+            acceleration_times_two = -acceleration_times_two;
+          }else{
+            // even number of steps => add a "cruising" step
+            movementState = MOVEMENT_STATE_CRUISING;
+            fakeCruise = true;
+          }
         }
         if((MOVEMENT_STATE_CRUISING == movementState)){
-          if((remainingSteps <= rampSteps)){
+          if(fakeCruise || (remainingSteps <= rampSteps)){
             movementState = MOVEMENT_STATE_BRAKING;
             acceleration_times_two = -acceleration_times_two;
           }
@@ -251,7 +276,6 @@ bool Stepper::update(void){
         }
         ticksToNextStep = currentTicks;
         totalTicks += ticksToNextStep;
-        totalSteps++;
         nextPioStep = HIGH; // rising edge at next call to run()
       }
     }
