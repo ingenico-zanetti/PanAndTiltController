@@ -49,12 +49,14 @@ Stepper::Stepper(const char *szName, uint32_t runFrequency, int stepPin, int dir
 }
 
 bool Stepper::setMaxSpeed(float speed){
-  if(remainingSteps){
-    return(true);
-  }else{
-    maxSpeed = speed;
+  bool raiseError = true;
+  if(0 == remainingSteps){
+    if((2.0f * speed) <= frequency){
+      maxSpeed = speed;
+      raiseError = false;
+    }
   }
-  return(false);
+  return(raiseError);
 }
 
 uint32_t Stepper::getMaxSpeed(void){
