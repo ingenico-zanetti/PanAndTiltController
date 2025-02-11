@@ -5,6 +5,8 @@
 Stepper panStepper( "PAN",  10000, PB12, PB13, PB14);
 Stepper tiltStepper("TILT", 10000, PA8,  PA9,  PA10);
 
+const char Stepper::noError[] = "";
+
 Stepper *getStepper(int c){
   switch(c){
     case 'P':
@@ -44,8 +46,17 @@ Stepper::Stepper(const char *szName, uint32_t runFrequency, int stepPin, int dir
   ticksToNextStep = currentTicks;
   remainingSteps = 0;
 
+#ifdef __LOG_STEPPER__
   logString[0] = '\0';
+#endif
+  clearLastError();
+}
 
+const char *Stepper::getLastError(void){
+  return(lastError);
+}
+void Stepper::clearLastError(void){
+  lastError = noError;
 }
 
 bool Stepper::setMaxSpeed(float speed){
@@ -54,7 +65,11 @@ bool Stepper::setMaxSpeed(float speed){
     if((2.0f * speed) <= frequency){
       maxSpeed = speed;
       raiseError = false;
+    }else{
+      lastError = "speed cannot be greater than frequency / 2";
     }
+  }else{
+    lastError = "Motor still running";
   }
   return(raiseError);
 }
@@ -65,6 +80,7 @@ uint32_t Stepper::getMaxSpeed(void){
 
 bool Stepper::setMinSpeed(float speed){
   if(remainingSteps){
+    lastError = "Motor still running";
     return(true);
   }else{
     startSpeed = speed;
@@ -83,6 +99,8 @@ bool Stepper::setCruiseSpeed(float speed){
       cruiseSpeed = speed;
       raiseError = false;
     }
+  }else{
+    lastError = "Motor still running";
   }
   return(raiseError);
 }
@@ -93,6 +111,7 @@ uint32_t Stepper::getCruiseSpeed(void){
 
 bool Stepper::setAcceleration(float acc){
   if(remainingSteps){
+    lastError = "Motor still running";
     return(true);
   }else{
     acceleration = acc;
@@ -114,6 +133,7 @@ int32_t Stepper::getPosition(void){
 
 bool Stepper::resetPosition(void){
   if(remainingSteps){
+    lastError = "Motor still running";
     return(true);
   }else{
     currentPosition = 0;
@@ -124,6 +144,7 @@ bool Stepper::resetPosition(void){
 bool Stepper::requestPosition(int32_t position){
   bool raiseError = false;
   if(remainingSteps > 0){
+    lastError = "Motor still running";
     raiseError = true;
   }else{
     requestedPosition = position;
@@ -135,6 +156,7 @@ bool Stepper::requestPosition(int32_t position){
 bool Stepper::requestPositionDelta(int32_t delta){
   bool raiseError = false;
   if(remainingSteps > 0){
+    lastError = "Motor still running";
     raiseError = true;
   }else{
     requestedDelta = delta;
@@ -146,6 +168,8 @@ bool Stepper::requestTimedPosition(int32_t position, float duration){
   if(0.0f == travelTicks){
     travelTicks = duration * frequency;
     return(requestPosition(position));
+  }else{
+    lastError = "requestTimedPosition():0.0f != travelTicks"
   }
   return(true);
 }
@@ -154,6 +178,8 @@ bool Stepper::requestTimedPositionDelta(int32_t delta, float duration){
   if(0.0f == travelTicks){
     travelTicks = duration * frequency;
     return(requestPositionDelta(delta));
+  }else{
+    lastError = "requestTimedPositionDelta():0.0f != travelTicks"
   }
   return(true);
 }
@@ -168,7 +194,7 @@ void Stepper::setEnable(bool e){
   }
 }
 
-#ifdef __LOG__
+#ifdef __LOG_STEPPER__
 static void sprintfFloat(char *szString, float f){
   int entier = (int)floor(f);
   int virgule = (int)((f - floor(f)) * 1000000.0);
@@ -182,7 +208,7 @@ bool Stepper::isValidCruiseSpeed(float newSpeed){
 
 bool Stepper::isValidSpeed(float newSpeed){
   if(0.0f == cruiseSpeed){
-#ifdef __LOG__
+#ifdef __LOG_STEPPER__
     char newSpeedString[32];
     sprintfFloat(newSpeedString, newSpeed);
     log("isValidSpeed("); log(newSpeedString); log(");");
@@ -202,6 +228,7 @@ bool Stepper::updateCurrentSpeed(float newSpeed){
   return(false);
 }
 
+#ifdef __LOG_STEPPER__
 void Stepper::log(const char *sz){
   unsigned int offset = strlen(logString);
   unsigned int length = strlen(sz);
@@ -211,6 +238,7 @@ void Stepper::log(const char *sz){
   }
   strcpy(logString + offset, sz);
 }
+#endif
 
 float Stepper::nextSpeed(void) {
     float square = currentSpeed * currentSpeed + acceleration_times_two;
@@ -248,6 +276,7 @@ bool Stepper::update(void){
       if(0 == ticksToNextStep){
         bool fakeCruise = false;
         remainingSteps--;
+        halfRemainingSteps--;
         totalSteps++;
         currentPosition += direction;
         // what to do next ?
@@ -269,11 +298,24 @@ bool Stepper::update(void){
             acceleration_times_two = -acceleration_times_two;
           }
         }else{
-          bool speedUpdated = updateCurrentSpeed(nextSpeed());
-          if(!speedUpdated && (MOVEMENT_STATE_ACCELERATING == movementState)){
-            // Cruising speed reached
-            movementState = MOVEMENT_STATE_CRUISING;
-            rampSteps = totalSteps;
+          if(0 == travelTicks){
+            bool speedUpdated = updateCurrentSpeed(nextSpeed());
+            if(!speedUpdated && (MOVEMENT_STATE_ACCELERATING == movementState)){
+              // Cruising speed reached
+              movementState = MOVEMENT_STATE_CRUISING;
+              rampSteps = totalSteps;
+            }
+          }else{
+            // Accelerate until the ramp ticks plus the time to reach half of the travel at current speed
+            // is below half the requested travel time.
+            // totalTicks is the sum of step duration since the beginning of move
+            if((totalTicks + (halfRemainingSteps * currentTicks)) > halfTravelTicks){
+              // Cruising speed reached
+              movementState = MOVEMENT_STATE_CRUISING;
+              rampSteps = totalSteps;
+            }else{
+              updateCurrentSpeed(nextSpeed());
+            }
           }
         }
         ticksToNextStep = currentTicks;
@@ -283,6 +325,7 @@ bool Stepper::update(void){
     }
     return(true);
   }else{
+    travelTicks = 0;
     int remaining = 0;
     // check for pending move request
     if(requestedDelta){
@@ -318,6 +361,12 @@ bool Stepper::update(void){
       halfTravelSteps = (remaining >> 1); // 1 => 0, 2 => 1, 3 => 1, 4 => 2, ...
       movementState = MOVEMENT_STATE_ACCELERATING;
       remainingSteps = remaining;
+
+      // timed move
+      if(travelTicks > 0){
+        halfTravelTicks = travelTicks / 2;
+        halfRemainingSteps = remaining / 2;
+      }
     }
   }
   return(false);

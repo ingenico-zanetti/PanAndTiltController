@@ -32,7 +32,11 @@ static bool plusRead(Stream *s, Stepper *stepper, const char c, const char *szSt
   (void)c;
   (void)szString;
   (void)comas;
+#ifdef __LOG_STEPPER__
   s->printf("%s: position = %d, speed [ %d %d %d ], acceleration = %d (rampSteps=%u) log[%s]" "\n", stepper->getName(), stepper->getPosition(), stepper->getMinSpeed(), stepper->getCruiseSpeed(), stepper->getMaxSpeed(), stepper->getAcceleration(), stepper->getRampSteps(), stepper->getLogString());
+#else
+  s->printf("%s: position = %d, speed [ %d %d %d ], acceleration = %d (rampSteps=%u) lastError=[%s]" "\n", stepper->getName(), stepper->getPosition(), stepper->getMinSpeed(), stepper->getCruiseSpeed(), stepper->getMaxSpeed(), stepper->getAcceleration(), stepper->getRampSteps(), stepper->getLastError());
+#endif
   return(false);
 }
 

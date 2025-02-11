@@ -1,7 +1,13 @@
 #ifndef __STEPPER_HPP_INCLUDED__
 #define __STEPPER_HPP_INCLUDED__
 
+#include "GlobalConfiguration.hpp"
+
+#ifdef __LOG_STEPPER__
+
 #define LOG_SIZE (1023)
+
+#endif
 
 class Stepper {
 	public:
@@ -45,19 +51,27 @@ class Stepper {
     static const int DIRECTION_STOPPED = 0;
     static const int DIRECTION_FORWARD = 1;
     static const int DIRECTION_BACKWARD = -1;
-    
-uint32_t currentTicks;
-uint32_t totalTicks;
-uint32_t totalSteps;
-bool updateCurrentSpeed(float newSpeed);
-float nextSpeed(void);
-float acceleration_times_two;
 
+    static const char noError[];
+    
+  uint32_t currentTicks;
+  uint32_t totalTicks;
+  uint32_t totalSteps;
+  bool updateCurrentSpeed(float newSpeed);
+  float nextSpeed(void);
+  float acceleration_times_two;
+
+#ifdef __LOG_STEPPER__
   void log(const char *sz);
   const char *getLogString(void){return(logString);}
+#endif
+  const char *getLastError(void);
+  void clearLastError(void);
 
 	private:
+#ifdef __LOG_STEPPER__
     char logString[LOG_SIZE + 1];
+#endif
     const char *name;
     int frequency;
     int32_t requestedPosition;        // requested absolute position, read by run()
@@ -94,6 +108,9 @@ float acceleration_times_two;
     int travelTicks;
     int halfTravelTicks;
     int rampTicks;
+    uint32_t halfRemainingSteps;
+
+    const char *lastError;
 
 };
 
