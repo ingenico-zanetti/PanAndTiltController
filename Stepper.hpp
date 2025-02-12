@@ -5,7 +5,7 @@
 
 #ifdef __LOG_STEPPER__
 
-#define LOG_SIZE (1023)
+#define LOG_SIZE (4095)
 
 #endif
 
@@ -105,9 +105,10 @@ class Stepper {
     float acceleration;
 
     // time-controlled move
-    int travelTicks;
-    int halfTravelTicks;
-    int rampTicks;
+    uint32_t pendingTravelTicks;
+    uint32_t travelTicks;
+    uint32_t halfTravelTicks;
+    uint32_t rampTicks;
     uint32_t halfRemainingSteps;
 
     const char *lastError;

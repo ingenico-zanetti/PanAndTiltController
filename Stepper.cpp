@@ -7,6 +7,14 @@ Stepper tiltStepper("TILT", 10000, PA8,  PA9,  PA10);
 
 const char Stepper::noError[] = "";
 
+#ifdef __LOG_STEPPER__
+static void sprintfFloat(char *szString, float f){
+  int entier = (int)floor(f);
+  int virgule = (int)((f - floor(f)) * 1000000.0);
+  sprintf(szString, "%d.%06d", entier, virgule);
+}
+#endif
+
 Stepper *getStepper(int c){
   switch(c){
     case 'P':
@@ -45,6 +53,7 @@ Stepper::Stepper(const char *szName, uint32_t runFrequency, int stepPin, int dir
   movementState = MOVEMENT_STATE_IDLE;
   ticksToNextStep = currentTicks;
   remainingSteps = 0;
+  pendingTravelTicks = 0;
 
 #ifdef __LOG_STEPPER__
   logString[0] = '\0';
@@ -132,6 +141,9 @@ int32_t Stepper::getPosition(void){
 }
 
 bool Stepper::resetPosition(void){
+#ifdef __LOG_STEPPER__
+  logString[0] = '\0';
+#endif
   if(remainingSteps){
     lastError = "Motor still running";
     return(true);
@@ -166,20 +178,26 @@ bool Stepper::requestPositionDelta(int32_t delta){
 
 bool Stepper::requestTimedPosition(int32_t position, float duration){
   if(0.0f == travelTicks){
-    travelTicks = duration * frequency;
+    pendingTravelTicks = duration * frequency;
     return(requestPosition(position));
   }else{
-    lastError = "requestTimedPosition():0.0f != travelTicks"
+    lastError = "requestTimedPosition():0.0f != travelTicks";
   }
   return(true);
 }
 
 bool Stepper::requestTimedPositionDelta(int32_t delta, float duration){
+#ifdef __LOG_STEPPER__
+#if 0
+  char str[32];
+  log(__func__); log("("); sprintfFloat(str, duration); log(str); log("s)");
+#endif
+#endif
   if(0.0f == travelTicks){
-    travelTicks = duration * frequency;
+    pendingTravelTicks = duration * frequency;
     return(requestPositionDelta(delta));
   }else{
-    lastError = "requestTimedPositionDelta():0.0f != travelTicks"
+    lastError = "requestTimedPositionDelta():0.0f != travelTicks";
   }
   return(true);
 }
@@ -194,14 +212,6 @@ void Stepper::setEnable(bool e){
   }
 }
 
-#ifdef __LOG_STEPPER__
-static void sprintfFloat(char *szString, float f){
-  int entier = (int)floor(f);
-  int virgule = (int)((f - floor(f)) * 1000000.0);
-  sprintf(szString, "%d.%06d", entier, virgule);
-}
-#endif
-
 bool Stepper::isValidCruiseSpeed(float newSpeed){
   return((0.0f == newSpeed) || ((startSpeed <= newSpeed) && (newSpeed <= maxSpeed)));
 }
@@ -209,9 +219,11 @@ bool Stepper::isValidCruiseSpeed(float newSpeed){
 bool Stepper::isValidSpeed(float newSpeed){
   if(0.0f == cruiseSpeed){
 #ifdef __LOG_STEPPER__
+#if 0
     char newSpeedString[32];
     sprintfFloat(newSpeedString, newSpeed);
     log("isValidSpeed("); log(newSpeedString); log(");");
+#endif
 #endif
     return((startSpeed <= floor(newSpeed + 0.5)) && (newSpeed <= maxSpeed));
   }else{
@@ -294,6 +306,9 @@ bool Stepper::update(void){
         }
         if((MOVEMENT_STATE_CRUISING == movementState)){
           if(fakeCruise || (remainingSteps <= rampSteps)){
+#ifdef __LOG_STEPPER__
+            log("BRAKING;");
+#endif
             movementState = MOVEMENT_STATE_BRAKING;
             acceleration_times_two = -acceleration_times_two;
           }
@@ -309,11 +324,23 @@ bool Stepper::update(void){
             // Accelerate until the ramp ticks plus the time to reach half of the travel at current speed
             // is below half the requested travel time.
             // totalTicks is the sum of step duration since the beginning of move
-            if((totalTicks + (halfRemainingSteps * currentTicks)) > halfTravelTicks){
-              // Cruising speed reached
-              movementState = MOVEMENT_STATE_CRUISING;
-              rampSteps = totalSteps;
-            }else{
+            if(MOVEMENT_STATE_ACCELERATING == movementState){
+#ifdef __LOG_STEPPER__
+char str[128];
+snprintf(str, sizeof(str) - 1, "tTs(%u) + (hRSs(%u) * cTs(%u)) = %u ?< hTTs = %u;", totalTicks, halfRemainingSteps, currentTicks, (totalTicks + (halfRemainingSteps * currentTicks)), halfTravelTicks);
+log(str);
+#endif
+              if((totalTicks + (halfRemainingSteps * currentTicks)) < halfTravelTicks){
+                // Cruising speed reached
+                movementState = MOVEMENT_STATE_CRUISING;
+                rampSteps = totalSteps;
+#ifdef __LOG_STEPPER__
+snprintf(str, sizeof(str) - 1, "timed:CRUISING,rSs=%u;", rampSteps);
+log(str);
+#endif
+              }
+            }
+            if(movementState != MOVEMENT_STATE_CRUISING){
               updateCurrentSpeed(nextSpeed());
             }
           }
@@ -349,6 +376,9 @@ bool Stepper::update(void){
       }
     }
     if(remaining > 0){
+#ifdef __LOG_STEPPER__
+  log("pending movement;");
+#endif
       // configure the first step
       currentSpeed = (float)startSpeed;
       currentTicks = (int)((float)frequency / currentSpeed);
@@ -363,9 +393,16 @@ bool Stepper::update(void){
       remainingSteps = remaining;
 
       // timed move
-      if(travelTicks > 0){
+      if(pendingTravelTicks > 0){
+        travelTicks = pendingTravelTicks;
+        pendingTravelTicks = 0;
         halfTravelTicks = travelTicks / 2;
         halfRemainingSteps = remaining / 2;
+#ifdef __LOG_STEPPER__
+  char str[128];
+  snprintf(str, sizeof(str) - 1, "timed: travelTicks=%u, halfTravelTicks=%u, halfRemainingSteps=%u;", travelTicks, halfTravelTicks, halfRemainingSteps);
+  log(str);
+#endif
       }
     }
   }
