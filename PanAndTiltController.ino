@@ -9,14 +9,18 @@ int ledStatus;
 uint32_t oldSeconds;
 uint32_t oldMillis;
 uint32_t oldQuarter;
+uint32_t oldTenths;
 
-AtCommandAnalyzer analyzer;
-AtCommandAnalyzer analyzer3;
+static enum {
+  __LED_PATTERN_HALF_HERTZ__ = 0,
+  __LED_PATTERN_2_HERTZ__ = 1,
+  __LED_PATTERN_5_HERTZ__ = 2
+} ledPattern = __LED_PATTERN_HALF_HERTZ__;
 
 HardwareSerial Serial3(PB11, PB10); // RX3, TX3
 
-int pinState = LOW;
-
+AtCommandAnalyzer analyzer;   // Native USB (aka Serial)
+AtCommandAnalyzer analyzer3;  // UART using RX3, TX3 (aka Serial3)
 
 void Update_IT_callback(void){
   bool updatePan = panStepper.run();
@@ -38,6 +42,7 @@ void setup() {
   digitalWrite(LED_BUILTIN, ledStatus);
   
   oldMillis = millis();
+  oldTenths = oldMillis / 10;
   oldQuarter = oldMillis / 250;
   oldSeconds = oldMillis / 1000;
 
@@ -51,22 +56,17 @@ void setup() {
   analyzer3.addCallback('&', handleAmpersAnd);
   analyzer3.setSerial(&Serial3);
 
-  // while(0 == Serial.available());
-
-#if 1
 #if defined(TIM1)
   TIM_TypeDef *Instance = TIM1;
 #else
   TIM_TypeDef *Instance = TIM2;
 #endif
 
-
   // Instantiate HardwareTimer object. Thanks to 'new' instanciation, HardwareTimer is not destructed when setup() function is finished.
   HardwareTimer *MyTim = new HardwareTimer(Instance);
   MyTim->setOverflow(100, MICROSEC_FORMAT); // 10 KHz
-  MyTim->attachInterrupt(Update_IT_callback); // bind argument to callback: When Update_IT_callback is called MyData will be given as argument
+  MyTim->attachInterrupt(Update_IT_callback);
   MyTim->resume();
-#endif
 }
 
 void loop() {
@@ -109,11 +109,25 @@ void loop() {
   uint32_t newSeconds = newMillis / 1000;
   if(newSeconds != oldSeconds){
     oldSeconds = newSeconds;
+    if(__LED_PATTERN_HALF_HERTZ__ == ledPattern){
       ledStatus = (HIGH == ledStatus) ? LOW : HIGH;
       digitalWrite(LED_BUILTIN, ledStatus);
+    }
   }
   uint32_t newQuarter = newMillis / 250;
   if(newQuarter != oldQuarter){
     oldQuarter = newQuarter;
+    if(__LED_PATTERN_2_HERTZ__ == ledPattern){
+      ledStatus = (HIGH == ledStatus) ? LOW : HIGH;
+      digitalWrite(LED_BUILTIN, ledStatus);
+    }
+  }
+  uint32_t newTenths = newMillis / 100;
+  if(newTenths != oldTenths){
+    oldTenths = newTenths;
+    if(__LED_PATTERN_5_HERTZ__ == ledPattern){
+      ledStatus = (HIGH == ledStatus) ? LOW : HIGH;
+      digitalWrite(LED_BUILTIN, ledStatus);
+    }
   }
 }
